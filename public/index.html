@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>雞蛋價格查詢系統</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { margin: 0; padding: 0; }
+    .centered-header {
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 30px;
+      margin-bottom: 30px;
+    }
+    .header-title {
+      text-align: center;
+      font-size: 2em;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      margin-bottom: 20px;
+    }
+    .search-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    #searchResult {
+      min-width: 250px;
+      font-size: 1.05em;
+      color: #007bff;
+      margin-left: 16px;
+      word-break: break-all;
+    }
+    form#searchForm {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+    canvas, ul {
+      display: block;
+      margin: 30px auto 0 auto;
+      max-width: 800px;
+    }
+  </style>
+</head>
+<body>
+<div class="centered-header">
+  <div class="header-title">雞蛋價格查詢</div>
+  <div class="search-row">
+    <form id="searchForm">
+      <label>
+        地區:
+        <select id="q_region">
+          <option value="台北">台北</option>
+          <option value="台中">台中</option>
+          <option value="台南">台南</option>
+        </select>
+      </label>
+      <label>
+        日期:
+        <select id="q_yearmonth"><option>載入中...</option></select>
+      </label>
+      <button type="submit">查詢</button>
+    </form>
+    <div id="searchResult"></div>
+  </div>
+</div>
+
+<canvas id="myChart" width="800" height="400"></canvas>
+<ul id="priceList"></ul>
+
+<script>
+  let allData = [];
+  let yearMonthList = [];
+  const regionSelect = document.getElementById('q_region');
+  const yearMonthSelect = document.getElementById('q_yearmonth');
+  const searchResultDiv = document.getElementById('searchResult');
+
+  async function loadAllData() {
+    allData = await fetch('http://localhost:3000/api/prices').then(res => res.json());
+    updateYearMonthOptions();
+  }
+
+  function updateYearMonthOptions() {
+    const prevYm = yearMonthSelect.value; // 1. 記住原本選項
+    const region = regionSelect.value;
+    const regionData = allData.filter(row => row.region === region);
+    const ymSet = new Set(regionData.map(row => row.date && row.date.slice(0, 7)));
+    yearMonthList = Array.from(ymSet).filter(Boolean).sort().reverse();
+    if (yearMonthList.length === 0) {
+      yearMonthSelect.innerHTML = '<option>無資料</option>';
+      yearMonthSelect.disabled = true;
+    } else {
+      yearMonthSelect.innerHTML = yearMonthList.map(ym => `<option value="${ym}">${ym}</option>`).join('');
+      yearMonthSelect.disabled = false;
+      // 2. 如果原本選的年月還在新選單內就選回原本那個
+      if (yearMonthList.includes(prevYm)) {
+        yearMonthSelect.value = prevYm;
+      } else {
+        // 不在的話自動選第一個
+        yearMonthSelect.value = yearMonthList[0];
+      }
+    }
+    searchResultDiv.textContent = ""; // 每次切換區域清空查詢結果
+  }
+
+  regionSelect.addEventListener('change', updateYearMonthOptions);
+
+  document.getElementById('searchForm').onsubmit = function(e) {
+    e.preventDefault();
+    const region = regionSelect.value;
+    const yearmonth = yearMonthSelect.value;
+    if (!yearMonthList.includes(yearmonth)) {
+      document.getElementById('priceList').innerHTML = '<li>查無資料</li>';
+      searchResultDiv.textContent = "";
+      drawChart([]);
+      return;
+    }
+    // 下方列表維持現有月資料
+    const filtered = allData.filter(row =>
+            row.region === region &&
+            row.date &&
+            row.date.startsWith(yearmonth)
+    );
+
+
+    // 在右側僅顯示最新一筆搜尋結果
+    if (filtered.length) {
+      const last = filtered[filtered.length - 1];
+      searchResultDiv.textContent = `${last.date}: ${last.region} 雞蛋每台斤 $${last.price} 元`;
+    } else {
+      searchResultDiv.textContent = "";
+    }
+
+    // 額外：找出選取的年份
+    const selectedYear = yearmonth.slice(0, 4);
+    drawYearlyChart(region, selectedYear, yearmonth);
+  };
+
+  let myChart = null;
+  function drawYearlyChart(region, year, selectedYearMonth) {
+    const months = [...Array(12).keys()].map(m => (m + 1).toString().padStart(2, '0'));
+    const monthLabels = months.map(m => `${year}-${m}`);
+    const monthAvgPrices = months.map(m => {
+      const ym = `${year}-${m}`;
+      const monthRows = allData.filter(row =>
+              row.region === region &&
+              row.date &&
+              row.date.startsWith(ym)
+      );
+      if (monthRows.length === 0) return null;
+      const avg = monthRows.reduce((sum, r) => sum + r.price, 0) / monthRows.length;
+      return parseFloat(avg.toFixed(2));
+    });
+
+    const pointBackgroundColors = months.map((m, idx) =>
+            `${year}-${m}` === selectedYearMonth ? 'red' : 'rgba(54,162,235,1)'
+    );
+    const pointRadius = months.map((m) =>
+            `${year}-${m}` === selectedYearMonth ? 7 : 4
+    );
+
+    const displayLabels = monthLabels;
+    const displayPrices = monthAvgPrices;
+
+    const ctx = document.getElementById('myChart').getContext('2d');
+    if (myChart) myChart.destroy();
+    myChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: displayLabels,
+        datasets: [{
+          label: `${region} ${year}每月平均價格`,
+          data: displayPrices,
+          fill: false,
+          spanGaps: true,
+          pointBackgroundColor: pointBackgroundColors,
+          pointRadius: pointRadius,
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { display: true }
+        },
+        scales: {
+          x: { title: { display: true, text: '月份' } },
+          y: {
+            min: 0,
+            max: 70,
+            title: { display: true, text: '價格' }
+          }
+        }
+      }
+    });
+  }
+
+  // 初始化
+  loadAllData();
+</script>
+</body>
+</html>
