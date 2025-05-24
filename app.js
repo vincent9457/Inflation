@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 查詢 API
+// 查詢 API（可用 /api/prices?region=全台&type=產地價&date=2024-05-23）
 app.get('/api/prices', (req, res) => {
     let sql = 'SELECT * FROM prices WHERE 1=1';
     let params = [];
@@ -29,7 +29,7 @@ app.get('/api/prices', (req, res) => {
     });
 });
 
-// 新增一筆價格
+// 手動新增一筆價格（非必要，主要給你測試用）
 app.post('/api/prices', (req, res) => {
     const { date, region, type, price } = req.body;
     if (!date || !region || !type || !price) {
@@ -44,6 +44,5 @@ app.post('/api/prices', (req, res) => {
         }
     );
 });
-
-// 匯出 app 讓 bin/www 可以載入
 module.exports = app;
+
