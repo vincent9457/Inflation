@@ -6,6 +6,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const path = require('path');
+app.use(express.static(path.join(__dirname, 'public')));
+
 // 查詢 API（可用 /api/prices?region=全台&type=產地價&date=2024-05-23）
 app.get('/api/prices', (req, res) => {
     let sql = 'SELECT * FROM prices WHERE 1=1';
@@ -43,6 +46,13 @@ app.post('/api/prices', (req, res) => {
             res.json({ id: this.lastID });
         }
     );
+});
+
+app.get('/api/last-update', (req, res) => {
+    db.get('SELECT value FROM meta WHERE key = ?', ['last_update'], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ last_update: row ? row.value : null });
+    });
 });
 module.exports = app;
 
