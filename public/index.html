@@ -280,8 +280,11 @@
             row.date.startsWith(yearmonth)
     );
     if (filtered.length) {
+      // 算本月平均
+      const avg = filtered.reduce((sum, r) => sum + r.price, 0) / filtered.length;
       const last = filtered[filtered.length - 1];
-      searchResultDiv.textContent = `${last.date}: ${last.region} ${last.type} 每台斤 $${last.price} 元`;
+      searchResultDiv.textContent =
+              `${last.region}  ${last.type}  ${yearmonth} 平均每台斤：$${avg.toFixed(2)} 元\n` ;
     } else {
       searchResultDiv.textContent = "";
       showError('查無符合條件的資料');
@@ -308,6 +311,21 @@
       return parseFloat(avg.toFixed(2));
     });
 
+    // 找出最高/最低
+    const validPrices = monthAvgPrices.filter(p => p !== null);
+    const max = Math.max(...validPrices);
+    const min = Math.min(...validPrices);
+    const maxMonth = monthLabels[monthAvgPrices.findIndex(p => p === max)];
+    const minMonth = monthLabels[monthAvgPrices.findIndex(p => p === min)];
+
+    // 計算漲跌幅（相對上月）
+    function getDelta(idx) {
+      if (idx === 0 || monthAvgPrices[idx] === null || monthAvgPrices[idx-1] === null) return null;
+      const prev = monthAvgPrices[idx-1];
+      const curr = monthAvgPrices[idx];
+      return prev === 0 ? null : (((curr - prev) / prev) * 100);
+    }
+
     const pointBackgroundColors = months.map((m, idx) =>
             `${year}-${m}` === selectedYearMonth ? 'red' : 'rgba(54,162,235,1)'
     );
@@ -333,7 +351,30 @@
         }]
       },
       options: {
-        plugins: { legend: { display: true } },
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const idx = context.dataIndex;
+                const val = monthAvgPrices[idx];
+                let tip = `平均價格：$${val ?? '-'} 元`;
+
+                // 漲跌幅
+                const delta = getDelta(idx);
+                if (delta !== null) {
+                  const dstr = delta > 0 ? `↑ +${delta.toFixed(2)}%` : (delta < 0 ? `↓ ${delta.toFixed(2)}%` : '持平');
+                  tip += `（較上月${dstr}）`;
+                }
+
+                // 如果是當年最高/最低
+                if (val === max) tip += `\n（今年最高：${maxMonth}）`;
+                if (val === min) tip += `\n（今年最低：${minMonth}）`;
+                return tip;
+              }
+            }
+          }
+        },
         scales: {
           x: { title: { display: true, text: '月份' } },
           y: {
@@ -345,6 +386,7 @@
       }
     });
   }
+
 
   // 初始化
   showLastUpdate();
